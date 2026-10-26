@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Certificate Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+        .cert-card {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        canvas {
+            cursor: crosshair;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            max-width: 100%;
+            height: auto;
+        }
+        .download-link {
+            transition: all 0.1s ease-in-out;
+            cursor: pointer;
+        }
+        .download-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <div class="max-w-4xl mx-auto">
+        <h1 class="3xl font-bold text-gray-800 mb-6 text-center">Certificate Generation Tool</h1>
+        <p class="text-gray-600 text-center mb-8">Upload your template, click where the name should go, and generate the certificates.</p>
+
+        <div class="bg-white p-6 rounded-xl cert-card">
+            
+            <!-- STEP 1: Template Upload -->
+            <div class="mb-6 pb-4 border-b">
+                <h2 class="text-xl font-semibold text-blue-600 mb-3">1. Upload Template Image</h2>
+                <input type="file" id="templateImage" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition duration-150" onchange="handleTemplateUpload()">
+            </div>
+
+            <!-- STEP 2: Name Placement & Style -->
+            <div class="mb-6 pb-4 border-b">
+                <h2 class="text-xl font-semibold text-blue-600 mb-3">2. Set Name Position and Style</h2>
+                <p class="text-sm text-gray-500 mb-3">Click on the image below to set the center point for the name text.</p>
+                
+                <div class="flex flex-col md:flex-row md:space-x-4 mb-4">
+                    <input type="number" id="textX" placeholder="X Coordinate" class="w-full md:w-1/4 p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 mb-2 md:mb-0" value="0" readonly>
+                    <input type="number" id="textY" placeholder="Y Coordinate" class="w-full md:w-1/4 p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 mb-2 md:mb-0" value="0" readonly>
+                    <input type="number" id="fontSize" placeholder="Font Size (px)" class="w-full md:w-1/4 p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 mb-2 md:mb-0" value="72" oninput="drawPreview()">
+                    <input type="color" id="fontColor" class="w-full md:w-1/4 h-10 p-1 border rounded-lg focus:ring-blue-500 focus:border-blue-500" value="#000000" oninput="drawPreview()">
+                </div>
+                <div class="flex flex-col md:flex-row md:space-x-4">
+                    <input type="text" id="fontFamily" placeholder="Font Family (e.g., 'Times New Roman')" class="w-full md:w-1/2 p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 mb-2 md:mb-0" value="Arial" oninput="drawPreview()">
+                    <input type="text" id="previewText" placeholder="Preview Text" class="w-full md:w-1/2 p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500" value="Recipient Name" oninput="drawPreview()">
+                </div>
+            </div>
+
+            <!-- Canvas Preview -->
+            <div class="mb-6">
+                <canvas id="certificateCanvas" class="w-full h-auto"></canvas>
+            </div>
+
+            <!-- STEP 3: Name List & Generate -->
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold text-blue-600 mb-3">3. Enter Names to Generate</h2>
+                <textarea id="nameList" rows="5" class="w-full p-3 border rounded-lg focus:ring-blue-500 focus:border-blue-500 resize-none mb-4" placeholder="Enter names, one per line (e.g., John Doe, Jane Smith, etc.).">
+John Doe
+Jane Smith
+Alex Johnson</textarea>
+
+                <div class="flex flex-col space-y-3 md:flex-row md:space-x-4 md:space-y-0">
+                    <button onclick="generateCertificates()" class="w-full md:w-1/2 bg-green-500 text-white py-3 rounded-xl font-semibold hover:bg-green-600 transition duration-150 disabled:bg-gray-400" id="generateBtn" disabled>
+                        Generate Certificates
+                    </button>
+                    <button onclick="downloadAllCertificates()" class="w-full md:w-1/2 bg-blue-500 text-white py-3 rounded-xl font-semibold hover:bg-blue-600 transition duration-150 disabled:bg-gray-400" id="downloadAllBtn" disabled>
+                        Download All Generated (.jpg)
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Results Container -->
+            <div id="results" class="mt-8 pt-6 border-t border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Generated Certificates</h2>
+                <div id="downloadLinks" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <p id="message" class="col-span-4 text-gray-500">Certificates will appear here after generation.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let templateImg = new Image();
+        let imageLoaded = false;
+        const canvas = document.getElementById('certificateCanvas');
+        const ctx = canvas.getContext('2d');
+        const resultsDiv = document.getElementById('downloadLinks');
+        const messageP = document.getElementById('message');
+        const generateBtn = document.getElementById('generateBtn');
+        const downloadAllBtn = document.getElementById('downloadAllBtn'); // New variable for the download all button
+
+        // Initial setup for the canvas click
+        canvas.addEventListener('click', (event) => {
+            if (!imageLoaded) return;
+
+            // Get bounding box of the canvas element
+            const rect = canvas.getBoundingClientRect();
+            // Calculate click position relative to the displayed canvas size
+            const clickX = event.clientX - rect.left;
+            const clickY = event.clientY - rect.top;
+
+            // Scale factor: Real image dimension / Displayed canvas dimension
+            const scaleX = templateImg.width / rect.width;
+            const scaleY = templateImg.height / rect.height;
+
+            // Calculate coordinates on the actual high-resolution image
+            const realX = Math.round(clickX * scaleX);
+            const realY = Math.round(clickY * scaleY);
+
+            // Update input fields
+            document.getElementById('textX').value = realX;
+            document.getElementById('textY').value = realY;
+
+            drawPreview();
+        });
+
+        // Function to load the template image
+        function handleTemplateUpload() {
+            const fileInput = document.getElementById('templateImage');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                imageLoaded = false;
+                generateBtn.disabled = true;
+                downloadAllBtn.disabled = true; // Disable download all button
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                templateImg.onload = () => {
+                    // Set canvas dimensions to match the actual image resolution
+                    canvas.width = templateImg.width;
+                    canvas.height = templateImg.height;
+                    
+                    imageLoaded = true;
+                    generateBtn.disabled = false;
+                    downloadAllBtn.disabled = true; // Keep download all disabled until generation
+                    
+                    // Draw the image and the preview text
+                    drawPreview();
+                };
+                templateImg.onerror = () => {
+                    console.error("Error loading image.");
+                    imageLoaded = false;
+                    generateBtn.disabled = true;
+                    downloadAllBtn.disabled = true; // Disable download all button
+                    // Provide feedback to the user without alert()
+                    messageP.textContent = "Error: Could not load the image file.";
+                };
+                templateImg.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Draws the template and the preview text on the main canvas
+        function drawPreview() {
+            if (!imageLoaded) return;
+
+            // Clear canvas and draw the background image
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
+
+            // Get styling parameters
+            const textX = parseInt(document.getElementById('textX').value, 10);
+            const textY = parseInt(document.getElementById('textY').value, 10);
+            const fontSize = parseInt(document.getElementById('fontSize').value, 10);
+            const fontFamily = document.getElementById('fontFamily').value;
+            const fontColor = document.getElementById('fontColor').value;
+            const previewText = document.getElementById('previewText').value;
+            
+            if (textX === 0 && textY === 0) return; // Don't draw if position isn't set
+
+            // Draw the preview text
+            ctx.font = `${fontSize}px ${fontFamily}`;
+            ctx.fillStyle = fontColor;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(previewText, textX, textY);
+            
+            // Draw crosshair or circle to indicate the center point
+            ctx.strokeStyle = '#FF0000'; // Red
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(textX, textY, 10, 0, 2 * Math.PI);
+            ctx.stroke();
+            
+            // Draw a red bounding box (optional, for visual debugging)
+            const textMetrics = ctx.measureText(previewText);
+            const textWidth = textMetrics.width;
+            const textHeight = fontSize * 1.2; // Estimate line height
+            
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(textX - textWidth / 2, textY - textHeight / 2, textWidth, textHeight);
+        }
+
+        // Core function to draw a single certificate
+        function drawCertificate(name) {
+            // Create a temporary canvas for high-resolution output
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = templateImg.width;
+            tempCanvas.height = templateImg.height;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // 1. Draw the template
+            tempCtx.drawImage(templateImg, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            // 2. Get styling parameters
+            const textX = parseInt(document.getElementById('textX').value, 10);
+            const textY = parseInt(document.getElementById('textY').value, 10);
+            const fontSize = parseInt(document.getElementById('fontSize').value, 10);
+            const fontFamily = document.getElementById('fontFamily').value;
+            const fontColor = document.getElementById('fontColor').value;
+            
+            // 3. Draw the name
+            tempCtx.font = `${fontSize}px ${fontFamily}`;
+            tempCtx.fillStyle = fontColor;
+            tempCtx.textAlign = 'center';
+            tempCtx.textBaseline = 'middle';
+            tempCtx.fillText(name, textX, textY);
+
+            return tempCanvas.toDataURL('image/jpeg'); // Use JPEG for smaller file size
+        }
+
+        // Function to manage the generation process
+        function generateCertificates() {
+            if (!imageLoaded) {
+                messageP.textContent = "Please upload a certificate template first.";
+                return;
+            }
+
+            const nameList = document.getElementById('nameList').value;
+            const names = nameList.split('\n')
+                                  .map(name => name.trim())
+                                  .filter(name => name.length > 0);
+
+            const textX = parseInt(document.getElementById('textX').value, 10);
+            const textY = parseInt(document.getElementById('textY').value, 10);
+
+            if (names.length === 0 || textX === 0 && textY === 0) {
+                messageP.textContent = "Please enter names and click on the canvas to set the text position.";
+                downloadAllBtn.disabled = true;
+                return;
+            }
+
+            resultsDiv.innerHTML = ''; // Clear previous results
+            
+            names.forEach((name, index) => {
+                const dataUrl = drawCertificate(name);
+                
+                const card = document.createElement('div');
+                card.className = 'download-link bg-gray-50 p-3 rounded-xl flex flex-col items-center justify-center text-center hover:bg-gray-100 transition duration-150';
+                
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                img.className = 'w-full h-auto rounded-lg mb-2 border border-gray-200';
+                
+                const link = document.createElement('a');
+                link.href = dataUrl;
+                // Clean the name for a valid file path
+                link.download = `Certificate_${index + 1}_${name.replace(/[^a-z0-9\s]/gi, '').replace(/\s+/g, '_')}.jpg`;
+                link.textContent = name;
+                link.className = 'text-blue-600 font-medium hover:underline truncate w-full';
+
+                const downloadIcon = document.createElement('div');
+                downloadIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 mt-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L10 11.586l2.293-2.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v7a1 1 0 11-2 0V3a1 1 0 011-1z" clip-rule="evenodd" />
+                </svg>`;
+
+                card.appendChild(img);
+                card.appendChild(link);
+                card.appendChild(downloadIcon);
+
+                resultsDiv.appendChild(card);
+            });
+            
+            messageP.textContent = `Successfully generated ${names.length} certificates. Click on a preview to download.`;
+            downloadAllBtn.disabled = false; // Enable the new download all button
+        }
+        
+        // Function to handle downloading all certificates
+        function downloadAllCertificates() {
+            const downloadLinks = resultsDiv.querySelectorAll('a[download]');
+            if (downloadLinks.length === 0) {
+                messageP.textContent = "No certificates have been generated yet.";
+                return;
+            }
+
+            messageP.textContent = `Starting download of ${downloadLinks.length} files... Please check your browser's download settings and accept multiple downloads if prompted.`;
+
+            let delay = 100; // Small delay (in milliseconds) between downloads
+
+            // Use a self-executing function with recursion to introduce a delay between clicks
+            function triggerDownload(index) {
+                if (index >= downloadLinks.length) {
+                    messageP.textContent = "All download attempts have been triggered. Check your downloads folder.";
+                    return;
+                }
+
+                const link = downloadLinks[index];
+                // Trigger the click event on the anchor tag
+                link.click();
+                
+                // Wait for the delay before triggering the next one
+                setTimeout(() => {
+                    triggerDownload(index + 1);
+                }, delay);
+            }
+
+            // Start the download process
+            triggerDownload(0);
+        }
+
+        // Initial draw (sets background color before image is loaded)
+        window.onload = function() {
+            canvas.style.backgroundColor = '#f0f0f0';
+            messageP.textContent = "Please upload your certificate template to begin.";
+        };
+    </script>
+</body>
+</html>
